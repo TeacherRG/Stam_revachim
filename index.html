@@ -438,6 +438,7 @@
 
       // Отрисовка сетки
       ctx.save();
+      ctx.scale(zoom, zoom);
       ctx.strokeStyle = `rgba(0, 230, 118, ${gridAlpha})`;
       ctx.lineWidth = 1 / zoom;
 
