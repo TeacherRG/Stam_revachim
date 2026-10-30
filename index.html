@@ -54,6 +54,25 @@
       left: 0;
       display: block;
     }
+    .zoom-controls {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      z-index: 4;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      direction: ltr;
+    }
+    .zoom-controls .btn { min-width: 40px; min-height: 40px; font-size: 18px; }
+    #zoom-level {
+      min-width: 52px;
+      padding: 6px;
+      border-radius: 6px;
+      background: rgba(28, 30, 36, 0.9);
+      text-align: center;
+      font-size: 13px;
+    }
     
     #upload-box {
       position: absolute;
@@ -131,6 +150,11 @@
       </label>
     </div>
     <canvas id="main-canvas"></canvas>
+    <div class="zoom-controls" aria-label="בקרת הגדלת תמונה">
+      <button class="btn" id="zoom-out-btn" type="button" aria-label="הקטן תמונה" title="הקטן תמונה">−</button>
+      <span id="zoom-level" aria-live="polite">100%</span>
+      <button class="btn" id="zoom-in-btn" type="button" aria-label="הגדל תמונה" title="הגדל תמונה">+</button>
+    </div>
   </div>
 
   <div id="bottom-sheet">
@@ -199,6 +223,8 @@
     let img = null;
     let rotation = 0; // 0, 90, 180, 270
     let zoom = 1;
+    let minZoom = 1;
+    let maxZoom = 8;
     let panX = 0;
     let panY = 0;
 
@@ -214,8 +240,8 @@
     let isDragging = false;
     let dragStartX = 0;
     let dragStartY = 0;
-    let initialPinchDist = null;
-    let startZoom = 1;
+    const activePointers = new Map();
+    let pinchStart = null;
 
     function resizeCanvas() {
       const width = container.clientWidth;
@@ -258,10 +284,45 @@
       const h = isRotated ? img.width : img.height;
       const width = container.clientWidth;
       const height = container.clientHeight;
-      zoom = Math.min((width * 0.95) / w, (height * 0.95) / h);
+      minZoom = Math.min((width * 0.95) / w, (height * 0.95) / h);
+      maxZoom = minZoom * 8;
+      zoom = minZoom;
       panX = (width - w * zoom) / 2;
       panY = (height - h * zoom) / 2;
+      updateZoomControls();
     }
+
+    function updateZoomControls() {
+      document.getElementById('zoom-level').textContent =
+        img ? Math.round((zoom / minZoom) * 100) + '%' : '100%';
+      document.getElementById('zoom-in-btn').disabled = !img || zoom >= maxZoom;
+      document.getElementById('zoom-out-btn').disabled = !img || zoom <= minZoom;
+    }
+
+    function setZoom(nextZoom, x = container.clientWidth / 2, y = container.clientHeight / 2) {
+      if (!img) return;
+      const boundedZoom = Math.max(minZoom, Math.min(maxZoom, nextZoom));
+      const scale = boundedZoom / zoom;
+      panX = x - (x - panX) * scale;
+      panY = y - (y - panY) * scale;
+      zoom = boundedZoom;
+      updateZoomControls();
+      updateMeasureText();
+      draw();
+    }
+
+    for (const [id, factor] of [['zoom-in-btn', 1.25], ['zoom-out-btn', 1 / 1.25]]) {
+      const button = document.getElementById(id);
+      button.addEventListener('pointerdown', (e) => e.stopPropagation());
+      button.addEventListener('click', () => setZoom(zoom * factor));
+    }
+
+    container.addEventListener('wheel', (e) => {
+      if (!img) return;
+      e.preventDefault();
+      const rect = container.getBoundingClientRect();
+      setZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1), e.clientX - rect.left, e.clientY - rect.top);
+    }, { passive: false });
 
     document.getElementById('rotate-btn').onclick = () => {
       rotation = (rotation + 90) % 360;
@@ -371,7 +432,25 @@
     // Touch & Mouse
     container.addEventListener('pointerdown', (e) => {
       if (!img) return;
-      const rect = canvas.getBoundingClientRect();
+      activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (activePointers.size === 2) {
+        const [first, second] = activePointers.values();
+        const rect = container.getBoundingClientRect();
+        const midX = (first.x + second.x) / 2 - rect.left;
+        const midY = (first.y + second.y) / 2 - rect.top;
+        pinchStart = {
+          distance: Math.hypot(second.x - first.x, second.y - first.y),
+          zoom,
+          midX,
+          midY,
+          panX,
+          panY
+        };
+        isDragging = false;
+        return;
+      }
+
+      const rect = container.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
 
@@ -386,11 +465,27 @@
     });
 
     window.addEventListener('pointermove', (e) => {
-      const rect = canvas.getBoundingClientRect();
+      if (activePointers.has(e.pointerId)) {
+        activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+      const rect = container.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
 
-      if (isRulerActive && rulerStart) {
+      if (pinchStart && activePointers.size >= 2) {
+        const [first, second] = activePointers.values();
+        const distance = Math.hypot(second.x - first.x, second.y - first.y);
+        const midX = (first.x + second.x) / 2 - rect.left;
+        const midY = (first.y + second.y) / 2 - rect.top;
+        if (pinchStart.distance === 0 || distance === 0) return;
+        const nextZoom = Math.max(minZoom, Math.min(maxZoom, pinchStart.zoom * distance / pinchStart.distance));
+        panX = midX - (pinchStart.midX - pinchStart.panX) * (nextZoom / pinchStart.zoom);
+        panY = midY - (pinchStart.midY - pinchStart.panY) * (nextZoom / pinchStart.zoom);
+        zoom = nextZoom;
+        updateZoomControls();
+        updateMeasureText();
+        draw();
+      } else if (isRulerActive && rulerStart) {
         rulerEnd = { x, y };
         updateMeasureText();
         draw();
@@ -401,9 +496,19 @@
       }
     });
 
-    window.addEventListener('pointerup', () => {
+    function finishPointer(e) {
+      activePointers.delete(e.pointerId);
+      if (activePointers.size < 2) pinchStart = null;
       isDragging = false;
-    });
+      if (activePointers.size === 1 && !isRulerActive) {
+        const remaining = activePointers.values().next().value;
+        dragStartX = remaining.x - panX;
+        dragStartY = remaining.y - panY;
+        isDragging = true;
+      }
+    }
+    window.addEventListener('pointerup', finishPointer);
+    window.addEventListener('pointercancel', finishPointer);
 
     // Отрисовка
     function draw() {
