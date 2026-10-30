@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+  <title>בדיקת שיעור אותיות ופרשיות סת״ם</title>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, Arial, sans-serif;
+      background: #121316;
+      color: #f1f2f6;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    header {
+      background: #1c1e24;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #2f3542;
+      z-index: 10;
+    }
+    header h1 { margin: 0; font-size: 15px; font-weight: bold; color: #f5cd79; }
+    .top-actions { display: flex; gap: 6px; }
+    .btn {
+      background: #2f3542;
+      color: #fff;
+      border: 1px solid #57606f;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .btn-primary { background: #3867d6; border-color: #4b7bec; }
+    .btn-active { background: #e67e22 !important; border-color: #d35400 !important; color: #fff !important; }
+    
+    #canvas-container {
+      flex: 1;
+      position: relative;
+      background: #090a0c;
+      overflow: hidden;
+      touch-action: none;
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      display: block;
+    }
+    
+    #upload-box {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      background: rgba(28, 30, 36, 0.95);
+      border: 2px dashed #f5cd79;
+      padding: 24px;
+      border-radius: 12px;
+      width: 85%;
+      max-width: 320px;
+      z-index: 5;
+    }
+    #upload-box p { margin: 0 0 16px 0; font-size: 14px; }
+    
+    #bottom-sheet {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #1c1e24;
+      border-top: 2px solid #3867d6;
+      border-radius: 14px 14px 0 0;
+      padding: 12px 16px 20px;
+      z-index: 20;
+      transform: translateY(100%);
+      transition: transform 0.25s ease-out;
+      max-height: 75vh;
+      overflow-y: auto;
+    }
+    #bottom-sheet.open { transform: translateY(0); }
+    .sheet-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .sheet-head h3 { margin: 0; font-size: 16px; color: #f5cd79; }
+    
+    .setting-row { margin-bottom: 12px; }
+    .setting-label { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+    input[type=range] { width: 100%; }
+    
+    .status-badge {
+      background: #2f3542;
+      border: 1px solid #57606f;
+      padding: 8px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 12px;
+      line-height: 1.4;
+    }
+    .status-badge b { color: #f5cd79; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>בדיקת סת״ם</h1>
+    <div class="top-actions">
+      <button class="btn" id="rotate-btn" title="סובב 90 מעלות">↻ 90°</button>
+      <button class="btn" id="ruler-toggle-btn">📏 סרגל</button>
+      <button class="btn btn-primary" id="open-sheet-btn">⚙️ הגדרות</button>
+    </div>
+  </header>
+
+  <div id="canvas-container">
+    <div id="upload-box">
+      <p>בחר תמונה של הקלף / המזוזה:</p>
+      <label class="btn btn-primary" style="display:inline-block; margin-bottom:8px;">
+        📸 צלם במצלמה
+        <input type="file" accept="image/*" capture="environment" id="camera-input" style="display:none">
+      </label>
+      <br>
+      <label class="btn" style="display:inline-block;">
+        📁 בחר מהגלריה
+        <input type="file" accept="image/*" id="file-input" style="display:none">
+      </label>
+    </div>
+    <canvas id="main-canvas"></canvas>
+  </div>
+
+  <div id="bottom-sheet">
+    <div class="sheet-head">
+      <h3>הגדרות רשת ושיעור אותיות</h3>
+      <button class="btn" id="close-sheet-btn">✕ סגור</button>
+    </div>
+
+    <div class="status-badge" id="measure-result">
+      מצב מדידה: גע בסרגל כדי למדוד רווח בין אותיות או תיבות.
+    </div>
+
+    <div class="setting-row">
+      <div class="setting-label">
+        <span>רוחב אות ממוצע (גודל משבצת):</span>
+        <b id="grid-size-val">30px</b>
+      </div>
+      <input type="range" id="grid-size" min="10" max="150" value="30">
+    </div>
+
+    <div class="setting-row">
+      <button class="btn" id="auto-detect-btn" style="width:100%; margin-bottom:8px;">
+        🔍 זיהוי גודל אות אוטומטי
+      </button>
+    </div>
+
+    <div class="setting-row">
+      <div class="setting-label">
+        <span>הזזת רשת (אופקי):</span>
+        <span id="shift-x-val">0</span>
+      </div>
+      <input type="range" id="shift-x" min="0" max="100" value="0">
+    </div>
+
+    <div class="setting-row">
+      <div class="setting-label">
+        <span>הזזת רשת (אנכי):</span>
+        <span id="shift-y-val">0</span>
+      </div>
+      <input type="range" id="shift-y" min="0" max="100" value="0">
+    </div>
+
+    <div class="setting-row">
+      <div class="setting-label">
+        <span>שקיפות רשת:</span>
+      </div>
+      <input type="range" id="grid-alpha" min="0.1" max="1" step="0.05" value="0.4">
+    </div>
+
+    <div class="setting-row">
+      <label class="btn" style="display:block; text-align:center;">
+        החלף תמונה
+        <input type="file" accept="image/*" id="reupload-input" style="display:none">
+      </label>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('main-canvas');
+    const ctx = canvas.getContext('2d');
+    const container = document.getElementById('canvas-container');
+    const uploadBox = document.getElementById('upload-box');
+    const bottomSheet = document.getElementById('bottom-sheet');
+    const measureResult = document.getElementById('measure-result');
+
+    let img = null;
+    let rotation = 0; // 0, 90, 180, 270
+    let zoom = 1;
+    let panX = 0;
+    let panY = 0;
+
+    let gridSize = 30;
+    let shiftX = 0;
+    let shiftY = 0;
+    let gridAlpha = 0.4;
+
+    let isRulerActive = false;
+    let rulerStart = null;
+    let rulerEnd = null;
+
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let initialPinchDist = null;
+    let startZoom = 1;
+
+    function resizeCanvas() {
+      canvas.width = container.clientWidth;
+      canvas.height = container.clientHeight;
+      draw();
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    function handleImage(file) {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        img = new Image();
+        img.onload = () => {
+          uploadBox.style.display = 'none';
+          rotation = 0;
+          resetView();
+          draw();
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    document.getElementById('file-input').onchange = (e) => handleImage(e.target.files[0]);
+    document.getElementById('camera-input').onchange = (e) => handleImage(e.target.files[0]);
+    document.getElementById('reupload-input').onchange = (e) => handleImage(e.target.files[0]);
+
+    function resetView() {
+      if (!img) return;
+      const isRotated = rotation === 90 || rotation === 270;
+      const w = isRotated ? img.height : img.width;
+      const h = isRotated ? img.width : img.height;
+      zoom = Math.min((canvas.width * 0.95) / w, (canvas.height * 0.95) / h);
+      panX = (canvas.width - w * zoom) / 2;
+      panY = (canvas.height - h * zoom) / 2;
+    }
+
+    document.getElementById('rotate-btn').onclick = () => {
+      rotation = (rotation + 90) % 360;
+      resetView();
+      draw();
+    };
+
+    document.getElementById('ruler-toggle-btn').onclick = function() {
+      isRulerActive = !isRulerActive;
+      this.classList.toggle('btn-active', isRulerActive);
+      this.textContent = isRulerActive ? '✓ מדידה' : '📏 סרגל';
+      draw();
+    };
+
+    document.getElementById('open-sheet-btn').onclick = () => bottomSheet.classList.add('open');
+    document.getElementById('close-sheet-btn').onclick = () => bottomSheet.classList.remove('open');
+
+    document.getElementById('grid-size').oninput = function() {
+      gridSize = parseFloat(this.value);
+      document.getElementById('grid-size-val').textContent = gridSize + 'px';
+      updateMeasureText();
+      draw();
+    };
+
+    document.getElementById('shift-x').oninput = function() {
+      shiftX = parseFloat(this.value);
+      document.getElementById('shift-x-val').textContent = shiftX;
+      draw();
+    };
+
+    document.getElementById('shift-y').oninput = function() {
+      shiftY = parseFloat(this.value);
+      document.getElementById('shift-y-val').textContent = shiftY;
+      draw();
+    };
+
+    document.getElementById('grid-alpha').oninput = function() {
+      gridAlpha = parseFloat(this.value);
+      draw();
+    };
+
+    // Авто-детект ширины букв
+    document.getElementById('auto-detect-btn').onclick = () => {
+      if (!img) return;
+      const offCanvas = document.createElement('canvas');
+      const offCtx = offCanvas.getContext('2d');
+      offCanvas.width = img.width;
+      offCanvas.height = img.height;
+      offCtx.drawImage(img, 0, 0);
+
+      const frame = offCtx.getImageData(0, 0, img.width, img.height);
+      const data = frame.data;
+      const runs = [];
+      
+      // Сканируем строки с шагом 15px для поиска черных штрихов букв
+      for (let y = 10; y < img.height; y += 15) {
+        let inside = false;
+        let start = 0;
+        for (let x = 0; x < img.width; x++) {
+          const idx = (y * img.width + x) * 4;
+          const lum = (data[idx] + data[idx+1] + data[idx+2]) / 3;
+          const isDark = lum < 120;
+          if (isDark && !inside) {
+            inside = true;
+            start = x;
+          } else if (!isDark && inside) {
+            inside = false;
+            const w = x - start;
+            if (w >= 10 && w <= 120) runs.push(w);
+          }
+        }
+      }
+
+      if (runs.length > 0) {
+        runs.sort((a,b) => a - b);
+        const median = runs[Math.floor(runs.length / 2)];
+        gridSize = Math.round(median);
+        document.getElementById('grid-size').value = gridSize;
+        document.getElementById('grid-size-val').textContent = gridSize + 'px';
+        updateMeasureText();
+        alert('זוהה רוחב ממוצע: ' + gridSize + 'px');
+        draw();
+      } else {
+        alert('לא זוהו מספיק אותיות, ניתן לכוון ידנית.');
+      }
+    };
+
+    function updateMeasureText() {
+      if (!rulerStart || !rulerEnd) return;
+      const dx = (rulerEnd.x - rulerStart.x) / zoom;
+      const dy = (rulerEnd.y - rulerStart.y) / zoom;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const letters = (dist / gridSize).toFixed(2);
+
+      let status = '';
+      if (letters >= 9) {
+        status = ' ⚠️ <b>שיעור פרשה מרווחת (מעל 9 אותיות)</b>';
+      } else if (letters >= 6) {
+        status = ' ⚠️ <b>חשש שיעור פרשה</b>';
+      } else if (letters <= 1.5) {
+        status = ' ✅ <b>רווח רגיל בין תיבות</b>';
+      }
+
+      measureResult.innerHTML = `נמדד: <b>${Math.round(dist)}px</b> (כשיעור <b>${letters}</b> אותיות).<br>${status}`;
+    }
+
+    // Touch & Mouse
+    container.addEventListener('pointerdown', (e) => {
+      if (!img) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      if (isRulerActive) {
+        rulerStart = { x, y };
+        rulerEnd = { x, y };
+      } else {
+        isDragging = true;
+        dragStartX = e.clientX - panX;
+        dragStartY = e.clientY - panY;
+      }
+    });
+
+    window.addEventListener('pointermove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      if (isRulerActive && rulerStart) {
+        rulerEnd = { x, y };
+        updateMeasureText();
+        draw();
+      } else if (isDragging) {
+        panX = e.clientX - dragStartX;
+        panY = e.clientY - dragStartY;
+        draw();
+      }
+    });
+
+    window.addEventListener('pointerup', () => {
+      isDragging = false;
+    });
+
+    // Отрисовка
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!img) return;
+
+      ctx.save();
+      ctx.translate(panX, panY);
+
+      // Вращение и центровка
+      const isRotated = rotation === 90 || rotation === 270;
+      const w = isRotated ? img.height : img.width;
+      const h = isRotated ? img.width : img.height;
+
+      ctx.save();
+      ctx.scale(zoom, zoom);
+
+      if (rotation === 90) {
+        ctx.translate(w, 0);
+        ctx.rotate(Math.PI / 2);
+      } else if (rotation === 180) {
+        ctx.translate(w, h);
+        ctx.rotate(Math.PI);
+      } else if (rotation === 270) {
+        ctx.translate(0, h);
+        ctx.rotate(-Math.PI / 2);
+      }
+      ctx.drawImage(img, 0, 0);
+      ctx.restore();
+
+      // Отрисовка сетки
+      ctx.save();
+      ctx.strokeStyle = `rgba(0, 230, 118, ${gridAlpha})`;
+      ctx.lineWidth = 1;
+
+      const scaledGrid = gridSize * zoom;
+      const ox = (shiftX * zoom) % scaledGrid;
+      const oy = (shiftY * zoom) % scaledGrid;
+
+      for (let x = ox; x < w * zoom; x += scaledGrid) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h * zoom);
+        ctx.stroke();
+      }
+      for (let y = oy; y < h * zoom; y += scaledGrid) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w * zoom, y);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      ctx.restore();
+
+      // Линейка поверх всего
+      if (rulerStart && rulerEnd) {
+        ctx.strokeStyle = '#e74c3c';
+        ctx.fillStyle = '#e74c3c';
+        ctx.lineWidth = 3;
+
+        ctx.beginPath();
+        ctx.moveTo(rulerStart.x, rulerStart.y);
+        ctx.lineTo(rulerEnd.x, rulerEnd.y);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(rulerStart.x, rulerStart.y, 5, 0, Math.PI * 2);
+        ctx.arc(rulerEnd.x, rulerEnd.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  </script>
+</body>
+</html>
