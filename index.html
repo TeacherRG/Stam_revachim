@@ -177,7 +177,7 @@
       <div class="setting-label">
         <span>שקיפות רשת:</span>
       </div>
-      <input type="range" id="grid-alpha" min="0.1" max="1" step="0.05" value="0.4">
+      <input type="range" id="grid-alpha" min="0" max="1" step="0.05" value="0.15">
     </div>
 
     <div class="setting-row">
@@ -205,7 +205,7 @@
     let gridSize = 30;
     let shiftX = 0;
     let shiftY = 0;
-    let gridAlpha = 0.4;
+    let gridAlpha = 0.15;
 
     let isRulerActive = false;
     let rulerStart = null;
@@ -218,8 +218,14 @@
     let startZoom = 1;
 
     function resizeCanvas() {
-      canvas.width = container.clientWidth;
-      canvas.height = container.clientHeight;
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      const pixelRatio = window.devicePixelRatio || 1;
+      canvas.width = Math.round(width * pixelRatio);
+      canvas.height = Math.round(height * pixelRatio);
+      canvas.style.width = width + 'px';
+      canvas.style.height = height + 'px';
+      ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
       draw();
     }
     window.addEventListener('resize', resizeCanvas);
@@ -250,9 +256,11 @@
       const isRotated = rotation === 90 || rotation === 270;
       const w = isRotated ? img.height : img.width;
       const h = isRotated ? img.width : img.height;
-      zoom = Math.min((canvas.width * 0.95) / w, (canvas.height * 0.95) / h);
-      panX = (canvas.width - w * zoom) / 2;
-      panY = (canvas.height - h * zoom) / 2;
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      zoom = Math.min((width * 0.95) / w, (height * 0.95) / h);
+      panX = (width - w * zoom) / 2;
+      panY = (height - h * zoom) / 2;
     }
 
     document.getElementById('rotate-btn').onclick = () => {
@@ -399,7 +407,7 @@
 
     // Отрисовка
     function draw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, container.clientWidth, container.clientHeight);
       if (!img) return;
 
       ctx.save();
@@ -423,28 +431,29 @@
         ctx.translate(0, h);
         ctx.rotate(-Math.PI / 2);
       }
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, 0, 0);
       ctx.restore();
 
       // Отрисовка сетки
       ctx.save();
       ctx.strokeStyle = `rgba(0, 230, 118, ${gridAlpha})`;
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 1 / zoom;
 
-      const scaledGrid = gridSize * zoom;
-      const ox = (shiftX * zoom) % scaledGrid;
-      const oy = (shiftY * zoom) % scaledGrid;
+      const ox = shiftX % gridSize;
+      const oy = shiftY % gridSize;
 
-      for (let x = ox; x < w * zoom; x += scaledGrid) {
+      for (let x = ox; x < w; x += gridSize) {
         ctx.beginPath();
         ctx.moveTo(x, 0);
-        ctx.lineTo(x, h * zoom);
+        ctx.lineTo(x, h);
         ctx.stroke();
       }
-      for (let y = oy; y < h * zoom; y += scaledGrid) {
+      for (let y = oy; y < h; y += gridSize) {
         ctx.beginPath();
         ctx.moveTo(0, y);
-        ctx.lineTo(w * zoom, y);
+        ctx.lineTo(w, y);
         ctx.stroke();
       }
       ctx.restore();
